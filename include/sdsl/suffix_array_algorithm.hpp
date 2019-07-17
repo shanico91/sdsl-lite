@@ -531,6 +531,530 @@ t_rac locate(
     return occ;
 }
 
+template <class t_csa, class t_pat_iter>
+void continue_backward_search_with_no_errors(
+        const t_csa& csa,
+        t_pat_iter start_ptr,
+        t_pat_iter end_ptr,
+        typename csa_wt<>::size_type& l_fwd,
+        typename csa_wt<>::size_type& r_fwd,
+        typename csa_wt<>::size_type& occs
+){
+
+    //continue the backward search with no errors while running over the same interval
+    for (auto ptr= start_ptr; ptr != end_ptr; ptr--){
+        occs = backward_search(csa, l_fwd, r_fwd, (typename t_csa::char_type)*ptr , l_fwd, r_fwd);
+
+        if (occs == 0){ //no occurrences with curr letter
+            break;
+        }
+    }
+}
+
+template <class t_csa, class t_pat_iter>
+void continue_bidirectional_search_forward_with_no_errors(
+        const t_csa& csa,
+        const t_csa& csa_rev,
+        t_pat_iter start_ptr,
+        t_pat_iter end_ptr,
+        typename csa_wt<>::size_type& l_fwd,
+        typename csa_wt<>::size_type& r_fwd,
+        typename csa_wt<>::size_type& l_bwd,
+        typename csa_wt<>::size_type& r_bwd,
+        typename csa_wt<>::size_type& occs
+) {
+
+    //continue the forward search with no errors while running over the same interval
+    for (auto ptr= start_ptr; ptr != end_ptr; ptr++){
+        auto letter_ptr = ptr;
+        occs = bidirectional_search_forward(csa, csa_rev, l_fwd, r_fwd, l_bwd, r_bwd, letter_ptr, letter_ptr+1, l_fwd, r_fwd, l_bwd, r_bwd);
+
+        if (occs == 0){ //no occurrences with curr letter
+            break;
+        }
+    }
+}
+
+template <class t_csa, class t_pat_iter>
+void continue_bidirectional_search_backward_with_no_errors(
+        const t_csa& csa,
+        const t_csa& csa_rev,
+        t_pat_iter start_ptr,
+        t_pat_iter end_ptr,
+        typename csa_wt<>::size_type& l_fwd,
+        typename csa_wt<>::size_type& r_fwd,
+        typename csa_wt<>::size_type& l_bwd,
+        typename csa_wt<>::size_type& r_bwd,
+        typename csa_wt<>::size_type& occs
+) {
+
+    //continue the backward search with no errors while running over the same interval
+    for (auto ptr= start_ptr; ptr != end_ptr; ptr--){
+        auto letter_ptr = ptr;
+        occs = bidirectional_search_backward(csa, csa_rev, l_fwd, r_fwd, l_bwd, r_bwd, letter_ptr, letter_ptr+1, l_fwd, r_fwd, l_bwd, r_bwd);
+
+        if (occs == 0){ //no occurrences with curr letter
+            break;
+        }
+    }
+}
+
+//convert the set of results into a t_rac vector
+template<class t_csa, class t_rac=int_vector<64>>
+t_rac convert_results(
+        std::set<uint64_t, std::greater <uint64_t>> *results
+){
+    t_rac ans((*results).size());
+    typename t_csa::size_type i = 0;
+    for(auto elem : (*results)){
+        ans[i] = elem;
+        i++;
+    }
+    return ans;
+}
+
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+t_rac locate_with_errors(
+        const t_csa&  csa,
+        const t_csa&  csa_rev,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t m,
+        size_t num_of_errors,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+){
+   switch (num_of_errors) {
+        case 1:
+            return locate_1(csa, csa_rev, begin, end, m);
+        case 2:
+            return locate_2(csa, csa_rev, begin, end, m);
+        default:
+            return locate(csa, begin, end);
+    }
+}
+
+//locate with one error exactly
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+t_rac locate_1(
+        const t_csa&  csa,
+        const t_csa&  csa_rev,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t m,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+){
+    size_t mid = ceil((double)m/2); //round up the size_of_the_query/2
+    std::set<uint64_t, std::greater <uint64_t>> results;
+
+    locate_1_case_a(csa, begin, end, mid, &results); // Case A: the mismatch is in the first half
+    locate_1_case_b(csa, csa_rev, begin, end, mid, &results);  // Case B: the mismatch is in the second half
+
+    //insert results set into a vector(t_rac) of answers
+    return convert_results<t_csa, t_rac>(&results);
+}
+
+//locate with two errors exactly
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+t_rac locate_2(
+        const t_csa&  csa,
+        const t_csa&  csa_rev,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t m,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+){
+    size_t s1 = floor((double)m/3); //round down size_of_the_query/3
+    size_t s2 = m - s1;
+    std::set<uint64_t, std::greater <uint64_t>> results;
+
+    locate_2_case_a(csa, begin, end, s2, &results); //CASE A: The mismatches occur in the first two parts (no mistakes at 3rd part)
+    locate_2_case_b(csa, csa_rev, begin, end, s2, &results); //CASE B: Both mismatches occur in the third part (no mistakes at 1st and 2nd parts)
+    locate_2_case_c(csa, csa_rev, begin, end, s1, s2, &results); //CASE C: The mismatches occur on the second and third part (no mistakes at 1st third)
+    locate_2_case_d(csa, csa_rev, begin, end, s1, s2, &results); //CASE D: The mismatches occur on the first and the last part respectively.
+
+    //insert results set into a vector(t_rac) of answers
+    return convert_results<t_csa, t_rac>(&results);
+}
+
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+void locate_1_case_a(
+        const t_csa&  csa,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t mid,
+        std::set<uint64_t, std::greater <uint64_t>> *results,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+){
+    // Case A: the mismatch is in the first half:
+    t_pat_iter sh_begin = begin + mid; // sh= second half
+
+    typename t_csa::size_type l_fwd, r_fwd, occs_old, occs_new, l_fwd_res, r_fwd_res;
+
+    occs_old = backward_search(csa, 0, csa.size()-1, sh_begin, end, l_fwd, r_fwd);
+
+    if (occs_old != 0){ //case A is redundant otherwise
+
+        for (auto itr = sh_begin-1; itr != begin-1; itr--){// i is the index of the first error (e1)
+            typename t_csa::char_type curr_letter = *itr;
+
+            for(auto err_letter : csa.comp2char){
+                if(int(err_letter)!= 0 && int(err_letter)!= 10 && int(err_letter)!= 32 && err_letter!=curr_letter){
+
+                    occs_new = backward_search(csa, l_fwd, r_fwd, err_letter, l_fwd_res, r_fwd_res);
+                    if (occs_new == 0){ //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    continue_backward_search_with_no_errors(csa, itr-1, begin-1, l_fwd_res, r_fwd_res, occs_new);
+                    if (occs_new == 0){ //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    //report as a result:
+                    for (typename t_csa::size_type x = 0; x < occs_new; ++x) {
+                        (*results).insert(csa[l_fwd_res+x]);
+                    }
+                }
+            }
+            //before moving to next index, calculate curr index as a true occurrence
+            occs_old = backward_search(csa, l_fwd, r_fwd, curr_letter, l_fwd, r_fwd);
+        }
+    }
+}
+
+
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+void locate_1_case_b(
+        const t_csa&  csa,
+        const t_csa&  csa_rev,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t mid,
+        std::set<uint64_t, std::greater <uint64_t>> *results,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+){
+    // Case B: the mismatch is in the second half
+    t_pat_iter fh_end = begin + mid; // fh = first half
+
+    typename t_csa::size_type l_fwd, r_fwd, occs_old, occs_new, l_fwd_res, r_fwd_res, l_bwd, r_bwd, l_bwd_res, r_bwd_res;
+
+    occs_old = bidirectional_search_forward(csa, csa_rev, 0, csa.size()-1,0, csa_rev.size()-1, begin, fh_end, l_fwd, r_fwd, l_bwd, r_bwd);
+
+    if (occs_old != 0) { //case B is redundant otherwise
+
+        for (auto itr = fh_end; itr != end; itr++){
+            typename t_csa::char_type curr_letter = *itr;
+
+            for(auto err_letter : csa.comp2char){
+                if(int(err_letter)!= 0 && int(err_letter)!= 10 && int(err_letter)!= 32 && err_letter!=curr_letter){
+
+                    auto err_ptr = &err_letter;
+                    occs_new = bidirectional_search_forward(csa, csa_rev, l_fwd, r_fwd, l_bwd, r_bwd, err_ptr,err_ptr+1, l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res);
+                    if (occs_new == 0){ //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    continue_bidirectional_search_forward_with_no_errors(csa, csa_rev, itr+1, end, l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res, occs_new);
+                    if (occs_new == 0){ //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    // report as a result:
+                    for (typename t_csa::size_type x = 0; x < occs_new; ++x) {
+                        (*results).insert(csa[l_fwd_res+x]);
+                    }
+                }
+            }
+            //before moving to next index, calculate curr index as a true occurrence
+            auto curr_ptr = &curr_letter;
+            occs_old = bidirectional_search_forward(csa, csa_rev, l_fwd, r_fwd, l_bwd, r_bwd, curr_ptr, curr_ptr+1, l_fwd, r_fwd, l_bwd, r_bwd);
+        }
+    }
+}
+
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+void locate_2_case_a(
+        const t_csa&  csa,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t s2,
+        std::set<uint64_t, std::greater <uint64_t>> *results,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+){
+
+    //CASE A: The mismatches occur in the first two parts (no mistakes at 3rd part)
+    t_pat_iter begin_3 = begin + s2; // begin of the 3rd third
+
+    typename t_csa::size_type l_fwd, r_fwd, occs_old, occs_new, occs_mid, l_fwd_res, r_fwd_res, l_fwd_mid, r_fwd_mid;
+
+    occs_old = backward_search(csa, 0, csa.size()-1, begin_3, end, l_fwd, r_fwd);
+
+    if(occs_old != 0){
+
+        for(auto jtr = begin_3-1; jtr != begin; jtr--){// j is the index of the second error (e2)
+            typename t_csa::char_type curr_letter_j = *jtr;
+
+            for(auto err_letter_j : csa.comp2char){
+                if(int(err_letter_j)!= 0 && int(err_letter_j)!= 10 && int(err_letter_j)!= 32 && err_letter_j!=curr_letter_j){
+
+                    occs_mid = backward_search(csa, l_fwd, r_fwd, err_letter_j, l_fwd_mid, r_fwd_mid);
+                    if (occs_mid == 0){ //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    for(auto itr = jtr-1; itr != begin-1; itr--){// i is the index of the first error (e1)
+                        typename t_csa::char_type curr_letter_i = *itr;
+
+                        for(auto err_letter_i : csa.comp2char){
+                            if(int(err_letter_i)!= 0 && int(err_letter_i)!= 10 && int(err_letter_i)!= 32 && err_letter_i!=curr_letter_i){
+
+                                occs_new = backward_search(csa, l_fwd_mid, r_fwd_mid, err_letter_i, l_fwd_res, r_fwd_res);
+                                if (occs_new == 0){ //no occurrences with curr mistake
+                                    continue;
+                                }
+
+                                continue_backward_search_with_no_errors(csa, itr-1, begin-1, l_fwd_res, r_fwd_res, occs_new);
+                                if (occs_new == 0){ //no occurrences with curr mistake
+                                    continue;
+                                }
+
+                                // report as a result:
+                                for (typename t_csa::size_type x = 0; x < occs_new; ++x) {
+                                    (*results).insert(csa[l_fwd_res+x]);
+                                }
+                            }
+                        }
+                        //before moving to next index i, calculate curr index as a true occurance
+                        occs_mid = backward_search(csa, l_fwd_mid, r_fwd_mid, (typename t_csa::char_type)*itr, l_fwd_mid, r_fwd_mid);
+                    }
+                }
+            }
+            //before moving to next index j, calculate curr index as a true occurance
+            occs_old = backward_search(csa, l_fwd, r_fwd, (typename t_csa::char_type)*jtr, l_fwd, r_fwd);
+        }
+    }
+}
+
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+void locate_2_case_b(
+        const t_csa&  csa,
+        const t_csa&  csa_rev,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t s2,
+        std::set<uint64_t, std::greater <uint64_t>> *results,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+){
+    //CASE B: Both mismatches occur in the third part (no mistakes at 1st and 2nd parts)
+    t_pat_iter begin_3 = begin + s2; // begin of the 3rd third
+
+    typename t_csa::size_type l_fwd, r_fwd, l_bwd, r_bwd, occs_old, occs_new, occs_mid; //screenshot of interval before making any mistake
+    typename t_csa::size_type l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid; //screenshot of interval after 1st mistake
+    typename t_csa::size_type l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res; //screenshot of interval after 2nd mistake
+
+    occs_old = bidirectional_search_forward(csa, csa_rev, 0, csa.size()-1, 0, csa_rev.size()-1, begin, begin_3, l_fwd, r_fwd, l_bwd, r_bwd);
+    if(occs_old != 0) {
+
+        for (auto itr = begin_3; itr != end; itr++) {// i is the index of the first error (e1)
+            typename t_csa::char_type curr_letter_i = *itr;
+
+            for(auto err_letter_i : csa.comp2char) {
+                if (int(err_letter_i) != 0 && int(err_letter_i) != 10 && int(err_letter_i) != 32 && err_letter_i != curr_letter_i) {
+
+                    auto err_i_ptr = &err_letter_i;
+                    occs_mid = bidirectional_search_forward(csa, csa_rev, l_fwd, r_fwd, l_bwd, r_bwd, err_i_ptr, err_i_ptr+1, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid);
+                    if (occs_mid == 0){ //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    for(auto jtr = itr+1; jtr != end; jtr++){// j is the index of the second error (e2)
+                        typename t_csa::char_type curr_letter_j = *jtr;
+
+                        for(auto err_letter_j : csa.comp2char) {
+                            if (int(err_letter_j) != 0 && int(err_letter_j) != 10 && int(err_letter_j) != 32 && err_letter_j != curr_letter_j) {
+
+                                auto err_j_ptr = &err_letter_j;
+                                occs_new = bidirectional_search_forward(csa, csa_rev, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid, err_j_ptr, err_j_ptr+1, l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res);
+                                if (occs_new == 0){ //no occurrences with curr mistake
+                                    continue;
+                                }
+
+                                continue_bidirectional_search_forward_with_no_errors(csa, csa_rev, jtr+1, end, l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res, occs_new);
+
+                                if (occs_new == 0){ //no occurrences with curr mistake
+                                    continue;
+                                }
+
+                                // report as a result:
+                                for (typename t_csa::size_type x = 0; x < occs_new; ++x) {
+                                    (*results).insert(csa[l_fwd_res+x]);
+                                }
+                            }
+                        }
+                        //before moving to next index j, calculate curr index as a true occurrence
+                        auto curr_ptr_j = &curr_letter_j;
+                        occs_mid = bidirectional_search_forward(csa, csa_rev, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid, curr_ptr_j, curr_ptr_j+1,l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid);
+                    }
+                }
+            }
+            //before moving to next index i, calculate curr index as a true occurrence
+            auto curr_ptr_i = &curr_letter_i;
+            occs_old = bidirectional_search_forward(csa, csa_rev,  l_fwd, r_fwd, l_bwd, r_bwd, curr_ptr_i, curr_ptr_i+1, l_fwd, r_fwd, l_bwd, r_bwd);
+        }
+    }
+}
+
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+void locate_2_case_c(
+        const t_csa&  csa,
+        const t_csa&  csa_rev,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t s1,
+        size_t s2,
+        std::set<uint64_t, std::greater <uint64_t>> *results,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+){
+    //CASE C: The mismatches occur on the second and third part (no mistakes at 1st third)
+    t_pat_iter begin_2 = begin + s1; // begin of the 2nd third
+    t_pat_iter begin_3 = begin + s2; // begin of the 3rd third
+
+    typename t_csa::size_type l_fwd, r_fwd, l_bwd, r_bwd, occs_old, occs_new, occs_mid; //screenshot of interval before making any mistake
+    typename t_csa::size_type l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid; //screenshot of interval after 1st mistake
+    typename t_csa::size_type l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res; //screenshot of interval after 2nd mistake
+
+    //find the accurate occurrence of the first third- get the interval
+    occs_old = bidirectional_search_forward(csa, csa_rev, 0, csa.size()-1, 0, csa_rev.size()-1, begin, begin_2, l_fwd, r_fwd, l_bwd, r_bwd);
+
+    if(occs_old != 0){
+        for (auto itr = begin_2; itr != begin_3; itr++) {// i is the index of the first error (e1)
+            typename t_csa::char_type curr_letter_i = *itr;
+
+            for(auto err_letter_i : csa.comp2char) {
+                if (int(err_letter_i) != 0 && int(err_letter_i) != 10 && int(err_letter_i) != 32 && err_letter_i != curr_letter_i) {
+
+                    auto err_i_ptr = &err_letter_i;
+                    occs_mid = bidirectional_search_forward(csa, csa_rev, l_fwd, r_fwd, l_bwd, r_bwd, err_i_ptr, err_i_ptr+1, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid);
+                    if (occs_mid == 0){ //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    continue_bidirectional_search_forward_with_no_errors(csa, csa_rev, itr+1, begin_3, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid, occs_mid);
+                    if (occs_mid == 0){ //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    for(auto jtr = begin_3; jtr != end; jtr++) {// j is the index of the second error (e2)
+                        typename t_csa::char_type curr_letter_j = *jtr;
+
+                        for(auto err_letter_j : csa.comp2char) {
+                            if (int(err_letter_j) != 0 && int(err_letter_j) != 10 && int(err_letter_j) != 32 && err_letter_j != curr_letter_j) {
+
+                                auto err_j_ptr = &err_letter_j;
+                                occs_new = bidirectional_search_forward(csa, csa_rev, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid, err_j_ptr, err_j_ptr+1, l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res);
+                                if (occs_new == 0){ //no occurrences with curr mistake
+                                    continue;
+                                }
+
+                                continue_bidirectional_search_forward_with_no_errors(csa, csa_rev, jtr+1, end, l_fwd_res, r_fwd_res,l_bwd_res, r_bwd_res, occs_new);
+                                if (occs_new == 0){ //no occurrences with curr mistake
+                                    continue;
+                                }
+
+                                // report as a result:
+                                for (typename t_csa::size_type x = 0; x < occs_new; ++x) {
+                                    (*results).insert(csa[l_fwd_res+x]);//will retrieve a vector of the actual indexes
+                                }
+                            }
+                        }
+                        //before moving to next index j, calculate curr index as a true occurrence
+                        auto curr_ptr_j = &curr_letter_j;
+                        occs_mid = bidirectional_search_forward(csa, csa_rev, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid, curr_ptr_j, curr_ptr_j+1,l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid);
+                    }
+                }
+            }
+            //before moving to next index i, calculate curr index as a true occurrence
+            auto curr_ptr_i = &curr_letter_i;
+            occs_old = bidirectional_search_forward(csa, csa_rev,  l_fwd, r_fwd, l_bwd, r_bwd, curr_ptr_i, curr_ptr_i+1, l_fwd, r_fwd, l_bwd, r_bwd);
+        }
+    }
+}
+
+template<class t_csa, class t_pat_iter, class t_rac=int_vector<64>>
+void locate_2_case_d(
+        const t_csa&  csa,
+        const t_csa&  csa_rev,
+        t_pat_iter begin,
+        t_pat_iter end,
+        size_t s1,
+        size_t s2,
+        std::set<uint64_t, std::greater <uint64_t>> *results,
+        SDSL_UNUSED typename std::enable_if<std::is_same<csa_tag, typename t_csa::index_category>::value, csa_tag>::type x = csa_tag()
+) {
+    //CASE D: The mismatches occur on the first and the last part respectively.
+    t_pat_iter begin_2 = begin + s1; // begin of the 2nd third
+    t_pat_iter begin_3 = begin + s2; // begin of the 3rd third
+
+    typename t_csa::size_type l_fwd, r_fwd, l_bwd, r_bwd, occs_old, occs_new, occs_mid; //screenshot of interval before making any mistake
+    typename t_csa::size_type l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid; //screenshot of interval after 1st mistake
+    typename t_csa::size_type l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res; //screenshot of interval after 2nd mistake
+
+    //find the accurate occurrences of the second third- get the interval
+    occs_old = bidirectional_search_forward(csa, csa_rev, 0, csa.size() - 1, 0, csa_rev.size() - 1, begin_2, begin_3, l_fwd, r_fwd, l_bwd, r_bwd);
+
+    if(occs_old != 0){
+        for(auto itr = begin_2-1; itr != begin-1; itr--) {// i is the index of the first error (e1)
+            typename t_csa::char_type curr_letter_i = *itr;
+
+            for (auto err_letter_i : csa.comp2char) {
+                if (int(err_letter_i) != 0 && int(err_letter_i) != 10 && int(err_letter_i) != 32 && err_letter_i != curr_letter_i) {
+
+                    auto err_i_ptr = &err_letter_i;
+                    occs_mid = bidirectional_search_backward(csa, csa_rev, l_fwd, r_fwd, l_bwd, r_bwd, err_i_ptr, err_i_ptr+1, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid);
+                    if (occs_mid == 0) { //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    continue_bidirectional_search_backward_with_no_errors(csa, csa_rev, itr-1, begin-1, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid, occs_mid);
+                    if (occs_mid == 0) { //no occurrences with curr mistake
+                        continue;
+                    }
+
+                    for (auto jtr = begin_3; jtr != end; jtr++) {
+                        typename t_csa::char_type curr_letter_j = *jtr;
+
+                        for (auto err_letter_j : csa.comp2char) {
+                            if (int(err_letter_j) != 0 && int(err_letter_j) != 10 && int(err_letter_j) != 32 && err_letter_j != curr_letter_j) {
+
+                                auto err_j_ptr = &err_letter_j;
+                                occs_new = bidirectional_search_forward(csa, csa_rev, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid, err_j_ptr, err_j_ptr + 1, l_fwd_res, r_fwd_res, l_bwd_res, r_bwd_res);
+                                if (occs_new == 0) { //no occurrences with curr mistake
+                                    continue;
+                                }
+
+                                continue_bidirectional_search_forward_with_no_errors(csa, csa_rev, jtr+1, end, l_fwd_res, r_fwd_res,l_bwd_res, r_bwd_res, occs_new);
+                                if (occs_new == 0) { //no occurrences with curr mistake
+                                    continue;
+                                }
+
+                                // report as result:
+                                for (typename t_csa::size_type x = 0; x < occs_new; ++x) {
+                                    (*results).insert(csa[l_fwd_res + x]);//will retrieve a vector of the actual indexes
+                                }
+                            }
+                        }
+                        //before moving to next index j, calculate curr index as a true occurrence
+                        auto curr_ptr_j = &curr_letter_j;
+                        occs_mid = bidirectional_search_forward(csa, csa_rev, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid, curr_ptr_j, curr_ptr_j + 1, l_fwd_mid, r_fwd_mid, l_bwd_mid, r_bwd_mid);
+                    }
+                }
+            }
+            //before moving to next index i, calculate curr index as a true occurrence
+            auto curr_ptr_i = &curr_letter_i;
+            occs_old = bidirectional_search_backward(csa, csa_rev,  l_fwd, r_fwd, l_bwd, r_bwd, curr_ptr_i, curr_ptr_i+1, l_fwd, r_fwd, l_bwd, r_bwd);
+        }
+    }
+}
 //! Calculates all occurrences of a pattern pat in a CSA/CST.
 /*!
  * \tparam t_csa      CSA/CST type.
